@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Blockchain UI</title>
+    <style>
+      body {
+        margin: 0;
+        font-family: Arial, sans-serif;
+        display: flex;
+      }
+
+      .container {
+        display: flex;
+        width: 100%;
+        height: 100vh;
+      }
+
+      .left-panel {
+        width: 60%;
+        background-color: #0b1e40;
+        color: white;
+        padding: 20px;
+        overflow-y: auto;
+      }
+
+      .left-panel h2 {
+        margin-top: 0;
+        color: #ffffff;
+      }
+
+      .left-panel table {
+        width: 100%;
+        border-collapse: collapse;
+        text-align: left;
+      }
+
+      .left-panel table th,
+      .left-panel table td {
+        padding: 10px;
+        border: 1px solid #2c3e50;
+      }
+
+      .left-panel table th {
+        background-color: #12355b;
+      }
+
+      .right-panel {
+        width: 40%;
+        background-color: #f4f4f4;
+        padding: 20px;
+        display: flex;
+        flex-direction: column;
+      }
+
+      .right-panel label {
+        margin-top: 20px;
+        font-weight: bold;
+      }
+
+      .right-panel select,
+      .right-panel input {
+        width: 100%;
+        padding: 10px;
+        margin-top: 10px;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+      }
+
+      .right-panel button {
+        margin-top: 20px;
+        padding: 10px;
+        background-color: #007bff;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+
+      .right-panel button:hover {
+        background-color: #0056b3;
+      }
+
+      .txo-details {
+        margin-top: 10px;
+        padding: 10px;
+        background-color: #e9e9e9;
+        border: 1px solid #ccc;
+        border-radius: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="left-panel">
+        <h2>Latest Blocks</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Height</th>
+              <th>Timestamp</th>
+              <th>Transactions</th>
+              <th>Size (KB)</th>
+            </tr>
+          </thead>
+          <tbody id="block-data">
+            <!-- Dynamic data will be populated here -->
+          </tbody>
+        </table>
+      </div>
+
+      <div class="right-panel">
+        <label for="txo-select">Available TXO</label>
+        <select id="txo-select">
+          <option value="">Select TXO</option>
+          <!-- Dynamic TXO options -->
+        </select>
+        <div id="txo-details" class="txo-details" style="display: none"></div>
+
+        <label for="receiver-address">Receiver Address</label>
+        <input
+          type="text"
+          id="receiver-address"
+          placeholder="Enter hexadecimal address"
+        />
+        <label for="transfer-amount">Amount</label>
+        <input
+          type="number"
+          id="transfer-amount"
+          placeholder="Enter amount you want to transfer"
+        />
+
+        <button id="send-button">Send</button>
+      </div>
+    </div>
+
+    <!--------------------------------------------------------------------------LOGIC--------------------------------------------------------------->
+
+    <script src="HashGenerator.js"></script>
+
+    <script>
+      //MACROS
+      let txFees = 0.002;
+
+      // Dummy data for blocks and TXOs
+      const blocks = [
+        {
+          // genesis block
+          previousBlockHash: "null",
+          height: 0,
+          timestamp: "2024-12-02 19:12:14",
+          txs: ["1"],
+          transactions: 0, // dynemecally handle during printing.
+          size: 1000,
+          commitment: undefined,
+        },
+      ];
+
+      const txos = [
+        {
+          id: "1",
+          Value: 100,
+          BlockHeight: 0,
+          Status: "Unspent",
+          localProof: [],
+        },
+      ];
+
+      //send local proof to New OutputTx
+      function sendLocalProof(txId, proof) {
+        let ind = 0;
+        for (let i = 0; i < txos.length; i++) {
+          if (txos[i].id === txId) {
+            ind = i;
+            break;
+          }
+        }
+        txos[ind].localProof = proof;
+      }
+
+      //initial setup
+      async function setUp() {
+        const obj1 = {
+          id: txos[0].id,
+          Value: txos[0].Value,
+          BlockHeight: txos[0].BlockHeight,
+          Status: txos[0].Status,
+        };
+        //Merkle Tree Build
+        const h1 = await hashOfobject(obj1);
+        const h2 = await hashOfobject({});
+        const h3 = h2;
+        const h4 = h2;
+
+        const h5 = await hashOfString(h1 , h2);
+        const h6 = await hashOfString(h3 , h4);
+
+        const h7 = await hashOfString(h5 , h6);
+
+        const finalComm = await hashOfString(h2 , h7); // h2 : since we dont have previous commitment
+        blocks[0].commitment = finalComm;
+        sendLocalProof("1", [h2, h6, h2]);
+
+        addBlockOnChain();
+        showUtxo();
+
+        // Handle send button click
+        const sendButton = document.getElementById("send-button");
+        sendButton.addEventListener("click", sendButtonHandler);
+      }
+      setUp();
+
+      // Populate block data
+      function addBlockOnChain() {
+        const blockDataContainer = document.getElementById("block-data");
+        blockDataContainer.innerHTML = "";
+        blocks.forEach((block) => {
+          const row = document.createElement("tr");
+          block.transactions = block.txs.length;
+          row.innerHTML = `
+              <td> <a href="javascript:void(0)" onclick="viewBlockDetails(${
+                block.height
+              })">${block.height}</a></td>
+                <td>${block.timestamp}</td>
+                <td>${block.transactions}</td>
+                <td>${block.size.toFixed(3)}</td>
+                `;
+          blockDataContainer.appendChild(row);
+        });
+      }
+
+      // Populate TXO options
+      function showUtxo() {
+        const txoSelect = document.getElementById("txo-select");
+        txoSelect.innerHTML = "";
+        const op = document.createElement("option");
+        op.value = "";
+        op.textContent = "Select TXO";
+        txoSelect.appendChild(op);
+
+        txos.forEach((txo) => {
+          const option = document.createElement("option");
+          option.value = txo.id;
+          option.textContent = txo.id;
+          txoSelect.appendChild(option);
+        });
+
+        // Show TXO details on selection
+        const txoDetailsContainer = document.getElementById("txo-details");
+        txoSelect.addEventListener("change", () => {
+          const selectedTxo = txos.find((txo) => txo.id === txoSelect.value);
+          if (selectedTxo) {
+            txoDetailsContainer.style.display = "block";
+            txoDetailsContainer.innerHTML = `
+              <pre>
+              details: {
+                  Value: ${selectedTxo.Value} BTC,
+                  BlockHeight: ${selectedTxo.BlockHeight},
+                  Status: "${selectedTxo.Status}",
+                  localProof : [
+                  ${selectedTxo.localProof[0]},
+                  ${selectedTxo.localProof[1]},
+                  ${selectedTxo.localProof[2]}
+                  ]
+              }
+              </pre>
+              `;
+          } else {
+            txoDetailsContainer.style.display = "none";
+          }
+        });
+      }
+
+      function sendButtonHandler() {
+        const txoSelect = document.getElementById("txo-select");
+        const selTxo = txoSelect.value;
+        const receiverAddress =
+          document.getElementById("receiver-address").value;
+        const amount = document.getElementById("transfer-amount").value;
+
+        if (!selTxo || !receiverAddress || !amount) {
+          alert("Make sure you have filled TXO,receiver address and amount.");
+          return;
+        }
+
+        // console.log("Processing transaction:", {
+        //   selTxo,
+        //   receiverAddress,
+        //   amount,
+        // });
+        alert("Transaction processed.");
+        minerValidateTx(selTxo, receiverAddress, amount);
+      }
+
+      function viewBlockDetails(height) {
+        //TODO
+        /*
+          Block also contain more then one Txs.
+          */
+        const block = blocks.find((block) => block.height === height);
+        if (block) {
+          let ind = 0;
+          for (let i = 0; i < txos.length; i++) {
+            if (txos[i].id === block.txs[0]) {
+              // we handling only one Tx
+              ind = i;
+              break;
+            }
+          }
+
+          const newWindow = window.open("", "_blank");
+          newWindow.document.write(`
+                      <html>
+                      <head><title>Block ${block.height} Details</title></head>
+
+                      <p> { </p>
+                      <p> <b> Commitment </b> : ${block.commitment} </p>
+                      <p> <b> Previous Block Hash </b> : ${block.previousBlockHash} </p>
+                      <p> <b> Height </b> : ${block.height} </p>
+                      <p> <b> Timestamp: </b> ${block.timestamp} </p>
+                      <p><b> Transaction-Details </b></p>
+                      <p> {
+                      
+                  `);
+
+          for (
+            let blockTxInd = 0;
+            blockTxInd < block.txs.length;
+            blockTxInd++
+          ) {
+            for (let ind = 0; ind < txos.length; ind++) {
+              if (txos[ind].id === block.txs[blockTxInd]) {
+                newWindow.document.write(`
+                <p>
+                  Value: ${txos[ind].Value} BTC, 
+                  BlockHeight: ${txos[ind].BlockHeight}, 
+                  Status: "${txos[ind].Status}"
+                  </p>
+                  `);
+                break;
+              }
+            }
+          }
+
+          newWindow.document.write(`
+                <p>}</p>
+            </html>
+           `);
+
+          newWindow.document.close();
+        }
+      }
+
+      function generateNewTx(amount) {
+        let newId = txos.length + 1;
+        const tx = {
+          id: newId.toString(),
+          BlockHeight: Number(blocks.length),
+          Value: Number(amount),
+          Status: "Unspent",
+        };
+        return tx;
+      }
+
+      async function mineNewBlock() {
+        const prevBlockHash = await hashOfobject(blocks[blocks.length - 1]);
+        const block = {
+          previousBlockHash: prevBlockHash,
+          height: blocks[blocks.length - 1].height + 1,
+          timestamp: "new time",
+          txs: [],
+          transactions: 0,
+          size: 1000,
+          commitment: undefined,
+        };
+        return block;
+      }
+
+      //Txs validate by miner [inputTx : 1 && outputTX : 2]
+      //TODO : do for multiple input && output
+      async function minerValidateTx(selectedTxo, receiverAddress, amount) {
+        //1. Assume : Tx signature is valid
+        //TODO : 2. ensure Tx is unspent
+        //3. check suffiecient balance
+        let ind = 0;
+        for (let i = 0; i < txos.length; i++) {
+          if (txos[i].id === selectedTxo) {
+            ind = i;
+            break;
+          }
+        }
+        if (Number(amount) > Number(txos[ind].Value)) {
+          alert("Faild : Tx don't have sufficient balance!");
+          return;
+        }
+
+        //4. start Tx executions
+        const newOutputTx1 = generateNewTx(amount);
+        txos.push(newOutputTx1);
+
+        const newOutputTx2 = generateNewTx(
+          Number(txos[ind].Value) - Number(amount)
+        );
+        txos.push(newOutputTx2);
+
+        //Merkle Tree Build
+        const h1 = await hashOfobject(newOutputTx1);
+        const h2 = await hashOfobject(newOutputTx2);
+        const h3 = await hashOfobject({});
+        const h4 = h3;
+
+        const h5 = await hashOfString(h1 , h2);
+        const h6 = await hashOfString(h3 , h4);
+
+        const h7 = await hashOfString(h5 , h6);
+        const oldCommitment = blocks[blocks.length - 1].commitment;
+
+        const finalComm = await hashOfString(oldCommitment , h7);
+        const newBlock = await mineNewBlock();
+        newBlock.commitment = finalComm;
+
+        sendLocalProof(newOutputTx1.id, [h2, h6, oldCommitment]);
+
+        sendLocalProof(newOutputTx2.id, [h1, h6, oldCommitment]);
+
+        newBlock.txs.push(newOutputTx1.id);
+        newBlock.txs.push(newOutputTx2.id);
+        txos[ind].Status = "Spent";
+
+        //Add mine block to chain
+        blocks.push(newBlock);
+        addBlockOnChain();
+        showUtxo();
+      }
+    </script>
+  </body>
+</html>
