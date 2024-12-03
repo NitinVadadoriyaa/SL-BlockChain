@@ -101,7 +101,7 @@
               <th>Height</th>
               <th>Timestamp</th>
               <th>Transactions</th>
-              <th>Size (KB)</th>
+              <th>Size (Byte)</th>
             </tr>
           </thead>
           <tbody id="block-data">
@@ -138,10 +138,22 @@
     <!--------------------------------------------------------------------------LOGIC--------------------------------------------------------------->
 
     <script src="HashGenerator.js"></script>
+    <script src="getTime.js"></script>
+    <script src="polynomialHashAcc.js"></script>
+    <script src="primeGenerator.js"></script>
 
     <script>
       //MACROS
       let txFees = 0.002;
+      let N = 0n;
+      let latestInputTxAccu = [BigInt(1)] // FOR INPUT-Tx-Accumulator
+
+      //HASH-TABLE for commitments
+      const HT = new Map();
+
+
+      // FOR FRONT_END only purpose
+      let spentTx = new Map();
 
       // Dummy data for blocks and TXOs
       const blocks = [
@@ -152,7 +164,7 @@
           timestamp: "2024-12-02 19:12:14",
           txs: ["1"],
           transactions: 0, // dynemecally handle during printing.
-          size: 1000,
+          size: 80,
           commitment: undefined,
         },
       ];
@@ -193,21 +205,26 @@
         const h3 = h2;
         const h4 = h2;
 
-        const h5 = await hashOfString(h1 , h2);
-        const h6 = await hashOfString(h3 , h4);
+        
+        const h5 = await hashOfString(h1, h2);
+        const h6 = await hashOfString(h3, h4);
 
-        const h7 = await hashOfString(h5 , h6);
+        const h7 = await hashOfString(h5, h6);
 
-        const finalComm = await hashOfString(h2 , h7); // h2 : since we dont have previous commitment
+        const finalComm = await hashOfString(h2, h7); // h2 : since we dont have previous commitment
+
         blocks[0].commitment = finalComm;
+        HT.set(finalComm,true);
         sendLocalProof("1", [h2, h6, h2]);
-
         addBlockOnChain();
         showUtxo();
 
         // Handle send button click
         const sendButton = document.getElementById("send-button");
         sendButton.addEventListener("click", sendButtonHandler);
+
+        // N large prime for Polynomial Hash accumulator
+        N = await generate256BitPrime();
       }
       setUp();
 
@@ -252,6 +269,11 @@
           const selectedTxo = txos.find((txo) => txo.id === txoSelect.value);
           if (selectedTxo) {
             txoDetailsContainer.style.display = "block";
+             if (spentTx.has(selectedTxo.id) ===  true) {
+              txoDetailsContainer.style.background = "#E57373";
+            } else {
+              txoDetailsContainer.style.background = "lightblue";
+            }
             txoDetailsContainer.innerHTML = `
               <pre>
               details: {
@@ -317,6 +339,9 @@
                       <p> { </p>
                       <p> <b> Commitment </b> : ${block.commitment} </p>
                       <p> <b> Previous Block Hash </b> : ${block.previousBlockHash} </p>
+                      <p> <b> Version (4Byte) </b>
+                      <p> <b> Bits (4Byte) </b>
+                      <p> <b> Nonce (4Byte) </b>
                       <p> <b> Height </b> : ${block.height} </p>
                       <p> <b> Timestamp: </b> ${block.timestamp} </p>
                       <p><b> Transaction-Details </b></p>
@@ -335,7 +360,7 @@
                 <p>
                   Value: ${txos[ind].Value} BTC, 
                   BlockHeight: ${txos[ind].BlockHeight}, 
-                  Status: "${txos[ind].Status}"
+                  Status: "${spentTx.has(txos[ind].id) === true ? "Spent" : "Unspent"}"
                   </p>
                   `);
                 break;
@@ -356,22 +381,57 @@
         let newId = txos.length + 1;
         const tx = {
           id: newId.toString(),
-          BlockHeight: Number(blocks.length),
           Value: Number(amount),
+          BlockHeight: Number(blocks.length),
           Status: "Unspent",
         };
         return tx;
       }
 
+      async function isInState(txId) {
+        let ind = 0;
+        for (let i = 0; i < txos.length; i++) {
+          if (txos[i].id === txId) {
+            ind = i;
+            break;
+          }
+        }
+
+        const tx = {
+          id: txos[ind].id,
+          Value: txos[ind].Value,
+          BlockHeight: txos[ind].BlockHeight,
+          Status: txos[ind].Status,
+        };
+
+        //Re-calculate commitment & compare
+        const h1 = await hashOfobject(tx);
+        const h3 = await hashOfString(h1, txos[ind].localProof[0]);
+
+        const h4 = await hashOfString(h3, txos[ind].localProof[1]);
+
+        const h5 = await hashOfString(h4, txos[ind].localProof[2]);
+
+        if (!HT.has(h5)) {
+           alert("Your Tx is not in state!");
+           return 0;
+        }
+        const flag = isMember(latestInputTxAccu,h1,N);
+        if (flag) {
+          alert("It already been spent!");
+          return 0;
+        }
+        return 1;
+      }
       async function mineNewBlock() {
         const prevBlockHash = await hashOfobject(blocks[blocks.length - 1]);
         const block = {
           previousBlockHash: prevBlockHash,
           height: blocks[blocks.length - 1].height + 1,
-          timestamp: "new time",
+          timestamp: getFormattedTimestamp(),
           txs: [],
           transactions: 0,
-          size: 1000,
+          size: 80,
           commitment: undefined,
         };
         return block;
@@ -381,7 +441,12 @@
       //TODO : do for multiple input && output
       async function minerValidateTx(selectedTxo, receiverAddress, amount) {
         //1. Assume : Tx signature is valid
-        //TODO : 2. ensure Tx is unspent
+        //2.1 ensure Tx is in state & not already spent
+        const result = await isInState(selectedTxo);
+        if (!result) {
+          return;
+        }
+
         //3. check suffiecient balance
         let ind = 0;
         for (let i = 0; i < txos.length; i++) {
@@ -409,25 +474,39 @@
         const h2 = await hashOfobject(newOutputTx2);
         const h3 = await hashOfobject({});
         const h4 = h3;
-
-        const h5 = await hashOfString(h1 , h2);
-        const h6 = await hashOfString(h3 , h4);
-
-        const h7 = await hashOfString(h5 , h6);
+        
+        const h5 = await hashOfString(h1, h2);
+        const h6 = await hashOfString(h3, h4);
+        
+        const h7 = await hashOfString(h5, h6);
         const oldCommitment = blocks[blocks.length - 1].commitment;
-
-        const finalComm = await hashOfString(oldCommitment , h7);
+        
+        const finalComm = await hashOfString(oldCommitment, h7);
         const newBlock = await mineNewBlock();
         newBlock.commitment = finalComm;
 
+        HT.set(finalComm,true);
+        
         sendLocalProof(newOutputTx1.id, [h2, h6, oldCommitment]);
-
+        
         sendLocalProof(newOutputTx2.id, [h1, h6, oldCommitment]);
-
+        
         newBlock.txs.push(newOutputTx1.id);
         newBlock.txs.push(newOutputTx2.id);
-        txos[ind].Status = "Spent";
+        // txos[ind].Status = "Spent";
 
+        const tx = {
+          id: txos[ind].id,
+          Value: txos[ind].Value,
+          BlockHeight: txos[ind].BlockHeight,
+          Status: txos[ind].Status,
+        };
+        const txH = await hashOfobject(tx);
+        
+        //Add in input-Tx-accumulator
+        latestInputTxAccu = addElement(latestInputTxAccu,txH,N);
+        spentTx.set(txos[ind].id,true);
+        
         //Add mine block to chain
         blocks.push(newBlock);
         addBlockOnChain();

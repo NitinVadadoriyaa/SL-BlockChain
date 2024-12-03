@@ -32,9 +32,11 @@ async function hashOfString(str1, str2) {
   let str = "";
   if (bigIntA < bigIntB) {
     str = str1 + str2;
+    
   } else {
     str = str2 + str1;
   }
+  
 
   const encoder = new TextEncoder();
   const data = encoder.encode(str);
