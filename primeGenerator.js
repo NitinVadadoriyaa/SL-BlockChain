@@ -50,7 +50,6 @@ async function generate256BitPrime() {
   do {
     prime = generateRandom256BitNumber();
   } while (!isProbablyPrime(prime));
-    console.log(prime);
   return prime;
 }
 

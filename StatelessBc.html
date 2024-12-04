@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Blockchain UI</title>
+    <title>Stateless Blockchain UI</title>
     <style>
       body {
         margin: 0;
@@ -164,7 +164,7 @@
           timestamp: "2024-12-02 19:12:14",
           txs: ["1"],
           transactions: 0, // dynemecally handle during printing.
-          size: 80,
+          size: 112,
           commitment: undefined,
         },
       ];
@@ -225,6 +225,7 @@
 
         // N large prime for Polynomial Hash accumulator
         N = await generate256BitPrime();
+        console.log(latestInputTxAccu);
       }
       setUp();
 
@@ -337,14 +338,15 @@
                       <head><title>Block ${block.height} Details</title></head>
 
                       <p> { </p>
+                      <p> <b> Accumulator </b> : ${latestInputTxAccu[latestInputTxAccu.length - Number(block.height) - Number(1)]} </p>
                       <p> <b> Commitment </b> : ${block.commitment} </p>
                       <p> <b> Previous Block Hash </b> : ${block.previousBlockHash} </p>
                       <p> <b> Version (4Byte) </b>
                       <p> <b> Bits (4Byte) </b>
                       <p> <b> Nonce (4Byte) </b>
-                      <p> <b> Height </b> : ${block.height} </p>
                       <p> <b> Timestamp: </b> ${block.timestamp} </p>
-                      <p><b> Transaction-Details </b></p>
+                      <p>  Height : ${block.height} </p>
+                      <p> Transaction-Details </p>
                       <p> {
                       
                   `);
@@ -431,7 +433,7 @@
           timestamp: getFormattedTimestamp(),
           txs: [],
           transactions: 0,
-          size: 80,
+          size: 112,
           commitment: undefined,
         };
         return block;
@@ -511,6 +513,7 @@
         blocks.push(newBlock);
         addBlockOnChain();
         showUtxo();
+        console.log(latestInputTxAccu);
       }
     </script>
   </body>
